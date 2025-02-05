@@ -1,9 +1,10 @@
 import bcrypt from "bcrypt";
 import { Request, Response } from "express";
 
+import { ERROR_MESSAGES, SUCCESS_MESSAGES } from "../constants/messages";
 import User from "../models/User";
-import { SUCCESS_MESSAGES, ERROR_MESSAGES } from "../constants/messages";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt";
+import { storeJwt, updateIsOutdated } from "../utils/redis";
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
@@ -40,6 +41,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     const accessToken = generateAccessToken(user._id.toString());
     const refreshToken = generateRefreshToken(user._id.toString());
+    await storeJwt({
+      id: user._id.toString(),
+      jwt: accessToken,
+      isOutdated: false,
+    });
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
@@ -55,4 +61,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const logout = async (req: Request, res: Response): Promise<void> => {};
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    await updateIsOutdated(token!);
+    res.status(204).json({ message: SUCCESS_MESSAGES.LOGOUT_SUCCESSFUL });
+  } catch (error) {
+    res.status(500).json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+};
